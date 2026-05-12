@@ -1,0 +1,474 @@
+// client/src/components/pages/public/TrackInquiry.tsx
+import React, { useState, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import {
+  Search, ShieldCheck, Clock, CheckCircle, Flower2,
+  PackageCheck, Truck, XCircle, RefreshCw, Monitor,
+  LogOut, AlertTriangle,
+} from 'lucide-react';
+import logo from '../../../assets/images/logo.png';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface TrackResult {
+  id: string;
+  name: string;
+  service: string;
+  status: 'pending' | 'confirmed' | 'in_progress' | 'ready' | 'out_for_delivery' | 'completed' | 'cancelled';
+  created_at: string;
+  event_date: string | null;
+  target_time: string | null;
+  fulfillment: 'pickup' | 'delivery' | null;
+  pickup_location: string | null;
+  message: string;
+  bouquet_name: string | null;
+  add_ons: string | null;
+  preferred_budget: string | null;
+}
+
+interface TrustedSession {
+  orderId: string;
+  phone4: string;
+  verifiedAt: number;
+  expiresAt: number;
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const SESSION_KEY    = 'btb_track_session';
+const SESSION_DAYS   = 14;
+const SESSION_MS     = SESSION_DAYS * 24 * 60 * 60 * 1000;
+
+const STATUS_CONFIG = {
+  pending:           { label: 'Pending Review',    color: '#C9A84C', bg: '#C9A84C15', Icon: Clock         },
+  confirmed:         { label: 'Confirmed',          color: '#6B7C5C', bg: '#6B7C5C15', Icon: CheckCircle   },
+  in_progress:       { label: 'Being Crafted',      color: '#C4717A', bg: '#C4717A15', Icon: Flower2       },
+  ready:             { label: 'Ready for Pickup',   color: '#6B7C5C', bg: '#6B7C5C15', Icon: PackageCheck  },
+  out_for_delivery:  { label: 'Out for Delivery',   color: '#C4717A', bg: '#C4717A15', Icon: Truck         },
+  completed:         { label: 'Completed',          color: '#6B7C5C', bg: '#6B7C5C15', Icon: ShieldCheck   },
+  cancelled:         { label: 'Cancelled',          color: '#e57373', bg: '#e5737315', Icon: XCircle       },
+};
+
+const STEPS: (keyof typeof STATUS_CONFIG)[] = [
+  'pending', 'confirmed', 'in_progress', 'ready', 'out_for_delivery', 'completed',
+];
+
+const STEP_DESCS: Record<string, string> = {
+  pending:          'Inquiry received. We\'ll review and confirm shortly.',
+  confirmed:        'Order confirmed! We\'ll start preparing your bouquet.',
+  in_progress:      'Your bouquet is being handcrafted with love.',
+  ready:            'Your bouquet is ready! Head to your pickup location.',
+  out_for_delivery: 'Your bouquet is on its way to you.',
+  completed:        'Order complete. Thank you for choosing BTBbyA!',
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function saveSession(orderId: string, phone4: string) {
+  const session: TrustedSession = {
+    orderId,
+    phone4,
+    verifiedAt: Date.now(),
+    expiresAt:  Date.now() + SESSION_MS,
+  };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+function loadSession(): TrustedSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const s: TrustedSession = JSON.parse(raw);
+    if (Date.now() > s.expiresAt) { localStorage.removeItem(SESSION_KEY); return null; }
+    return s;
+  } catch { return null; }
+}
+
+function clearSession() { localStorage.removeItem(SESSION_KEY); }
+
+function normalizeOrderId(raw: string): string {
+  const trimmed = raw.trim().toUpperCase();
+  // if user typed just digits, try to pad into BTB-INQ-XXXX
+  if (/^\d{1,4}$/.test(trimmed)) return `BTB-INQ-${trimmed.padStart(4, '0')}`;
+  return trimmed;
+}
+
+function daysLeft(expiresAt: number): number {
+  return Math.max(0, Math.ceil((expiresAt - Date.now()) / (24 * 60 * 60 * 1000)));
+}
+
+// ─── Mock fetch (replace with real API later) ─────────────────────────────────
+
+async function fetchTracking(orderId: string, phone4: string): Promise<TrackResult> {
+  const res = await fetch(`/api/inquiries/track/${encodeURIComponent(orderId)}`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ phone4 }),
+  });
+  if (res.status === 401 || res.status === 404) {
+    throw new Error('Unable to verify order details. Please check your inputs.');
+  }
+  if (!res.ok) throw new Error('Something went wrong. Please try again.');
+  return res.json();
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+const inputCls = 'w-full rounded-xl border border-[#C4717A]/20 bg-[#FAF6F0] px-4 py-3 text-sm text-[#2C2C2C] placeholder-[#2C2C2C]/30 focus:border-[#C4717A] focus:outline-none focus:ring-2 focus:ring-[#C4717A]/20 transition';
+
+const StatusBadge: React.FC<{ status: keyof typeof STATUS_CONFIG }> = ({ status }) => {
+  const cfg = STATUS_CONFIG[status];
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold"
+      style={{ backgroundColor: cfg.bg, color: cfg.color }}
+    >
+      <cfg.Icon className="h-3.5 w-3.5" />
+      {cfg.label}
+    </span>
+  );
+};
+
+const DetailRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="flex gap-3 rounded-xl border border-[#C4717A]/10 bg-[#FAF6F0] px-4 py-3">
+    <span className="w-28 shrink-0 text-xs font-semibold uppercase tracking-wide text-[#2C2C2C]/40 pt-0.5">{label}</span>
+    <span className="text-sm text-[#2C2C2C] leading-relaxed break-words">{value}</span>
+  </div>
+);
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
+const TrackInquiry: React.FC = () => {
+  const [searchParams]          = useSearchParams();
+  const [orderId, setOrderId]   = useState(searchParams.get('id') ?? '');
+  const [phone4, setPhone4]     = useState('');
+  const [remember, setRemember] = useState(true);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState('');
+  const [attempts, setAttempts] = useState(0);
+  const [result, setResult]     = useState<TrackResult | null>(null);
+  const [session, setSession]   = useState<TrustedSession | null>(null);
+  const [autoVerified, setAutoVerified] = useState(false);
+
+  // On mount — check trusted session
+  useEffect(() => {
+    const s = loadSession();
+    if (s) {
+      setSession(s);
+      setOrderId(s.orderId);
+      // auto-verify silently
+      autoVerify(s);
+    }
+  }, []);
+
+  const autoVerify = async (s: TrustedSession) => {
+    setLoading(true);
+    try {
+      const data = await fetchTracking(s.orderId, s.phone4);
+      setResult(data);
+      setAutoVerified(true);
+    } catch {
+      // session stale — clear and ask to re-verify
+      clearSession();
+      setSession(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTrack = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orderId.trim() || !phone4.trim()) return;
+    if (attempts >= 5) {
+      setError('Too many attempts. Please wait before trying again.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    setResult(null);
+    const normalized = normalizeOrderId(orderId);
+    try {
+      const data = await fetchTracking(normalized, phone4.trim());
+      setResult(data);
+      setAttempts(0);
+      if (remember) {
+        saveSession(normalized, phone4.trim());
+        setSession(loadSession());
+      }
+    } catch (err: any) {
+      setAttempts(a => a + 1);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    clearSession();
+    setSession(null);
+    setResult(null);
+    setOrderId('');
+    setPhone4('');
+    setAutoVerified(false);
+    setError('');
+  };
+
+  const stepIndex = result ? STEPS.indexOf(result.status as any) : -1;
+
+  // ── Locked out ──
+  if (attempts >= 5) {
+    return (
+      <div className="min-h-screen bg-[#FAF6F0] flex items-center justify-center px-4">
+        <div className="max-w-sm w-full text-center space-y-4">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-50 border border-red-200">
+            <AlertTriangle className="h-8 w-8 text-red-400" />
+          </div>
+          <h2 className="text-xl font-bold text-[#2C2C2C]">Too Many Attempts</h2>
+          <p className="text-sm text-[#2C2C2C]/55">Please wait a few minutes before trying again.</p>
+          <button onClick={() => setAttempts(0)}
+            className="inline-flex items-center gap-2 rounded-full bg-[#C4717A] px-6 py-2.5 text-sm font-bold text-white transition hover:bg-[#b05f68]">
+            <RefreshCw className="h-4 w-4" /> Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Result view ──
+  if (result) {
+    const cfg = STATUS_CONFIG[result.status];
+    return (
+      <div className="min-h-screen bg-[#FAF6F0] py-12 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-xl space-y-5">
+
+          {/* Header */}
+          <div className="text-center mb-2">
+            <img src={logo} alt="BTBbyA" className="mx-auto mb-3 h-12 w-12 object-contain" />
+            <h1 className="text-2xl font-bold text-[#2C2C2C]">Order Tracker</h1>
+          </div>
+
+          {/* Trusted session banner */}
+          {autoVerified && session && (
+            <div className="flex items-center justify-between rounded-2xl border border-[#6B7C5C]/20 bg-[#6B7C5C]/5 px-4 py-3">
+              <div className="flex items-center gap-2 text-xs text-[#6B7C5C]">
+                <Monitor className="h-3.5 w-3.5 shrink-0" />
+                <span>Trusted device · Session expires in <strong>{daysLeft(session.expiresAt)} days</strong></span>
+              </div>
+              <button onClick={handleLogout}
+                className="inline-flex items-center gap-1 rounded-full border border-[#6B7C5C]/30 px-3 py-1 text-xs font-semibold text-[#6B7C5C] hover:bg-[#6B7C5C]/10 transition">
+                <LogOut className="h-3 w-3" /> Sign out
+              </button>
+            </div>
+          )}
+
+          {/* Order header card */}
+          <div className="rounded-3xl border border-[#C4717A]/10 bg-white p-6 shadow-lg space-y-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest text-[#2C2C2C]/40">Inquiry Reference</p>
+                <h2 className="mt-0.5 text-xl font-bold text-[#C4717A]">{result.id}</h2>
+                <p className="mt-0.5 text-sm font-semibold text-[#2C2C2C]">{result.name}</p>
+                <p className="text-xs text-[#2C2C2C]/50">{result.service}</p>
+              </div>
+              <StatusBadge status={result.status} />
+            </div>
+
+            {/* Progress timeline */}
+            {result.status !== 'cancelled' && (
+              <div>
+                <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-[#2C2C2C]/40">Progress</p>
+                <div className="relative">
+                  {/* connector line */}
+                  <div className="absolute left-4 top-4 h-[calc(100%-2rem)] w-px bg-[#C4717A]/15" />
+
+                  <div className="space-y-4">
+                    {STEPS.map((s, i) => {
+                      const scfg  = STATUS_CONFIG[s];
+                      const done  = i <= stepIndex;
+                      const active = i === stepIndex;
+                      return (
+                        <div key={s} className="relative flex items-start gap-4 pl-10">
+                          {/* dot */}
+                          <div className={`absolute left-0 flex h-8 w-8 items-center justify-center rounded-full border-2 transition-all ${
+                            done
+                              ? active
+                                ? 'border-[#C4717A] bg-[#C4717A] text-white shadow-md shadow-[#C4717A]/30'
+                                : 'border-[#C4717A] bg-[#C4717A] text-white'
+                              : 'border-[#C4717A]/20 bg-white text-[#2C2C2C]/25'
+                          }`}>
+                            <scfg.Icon className="h-3.5 w-3.5" />
+                          </div>
+                          <div className={`pb-1 ${done ? '' : 'opacity-40'}`}>
+                            <p className={`text-sm font-bold ${active ? 'text-[#C4717A]' : 'text-[#2C2C2C]'}`}>{scfg.label}</p>
+                            {active && (
+                              <p className="mt-0.5 text-xs text-[#2C2C2C]/55 leading-relaxed">{STEP_DESCS[s]}</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {result.status === 'cancelled' && (
+              <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-500">
+                This order has been cancelled. <Link to="/inquiry" className="font-bold underline">Place a new order</Link>
+              </div>
+            )}
+          </div>
+
+          {/* Order details */}
+          <div className="rounded-3xl border border-[#C4717A]/10 bg-white p-6 shadow-sm space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-widest text-[#2C2C2C]/40 mb-1">Order Details</p>
+
+            <DetailRow label="Submitted"   value={new Date(result.created_at).toLocaleDateString('en-PH', { dateStyle: 'long' })} />
+            {result.event_date   && <DetailRow label="Target Date"  value={new Date(result.event_date).toLocaleDateString('en-PH', { dateStyle: 'long' })} />}
+            {result.target_time  && <DetailRow label="Target Time"  value={result.target_time} />}
+            {result.fulfillment  && <DetailRow label="Fulfillment"  value={result.fulfillment === 'pickup' ? `Pickup — ${result.pickup_location ?? ''}` : 'Delivery'} />}
+            {result.bouquet_name && <DetailRow label="Bouquet"      value={result.bouquet_name} />}
+            {result.message      && <DetailRow label="Details"      value={result.message} />}
+            {result.add_ons      && <DetailRow label="Add-Ons"      value={result.add_ons} />}
+            {result.preferred_budget && <DetailRow label="Budget"   value={result.preferred_budget} />}
+
+            <div className="rounded-2xl border border-[#6B7C5C]/15 bg-[#6B7C5C]/5 px-4 py-3 text-xs text-[#6B7C5C] mt-2">
+              <p className="font-semibold">Payment</p>
+              <p className="mt-0.5 text-[#6B7C5C]/70">
+                Payment and downpayment details will be shared once your order is confirmed. Check back here for updates.
+              </p>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button onClick={handleLogout}
+              className="inline-flex items-center justify-center gap-2 rounded-full border border-[#C4717A]/20 px-6 py-2.5 text-sm font-semibold text-[#C4717A] transition hover:bg-[#C4717A]/5 active:scale-95">
+              <Search className="h-4 w-4" /> Track Another Order
+            </button>
+            <Link to="/inquiry"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#C4717A] px-6 py-2.5 text-sm font-bold text-white transition hover:bg-[#b05f68] active:scale-95">
+              <Flower2 className="h-4 w-4" /> Place New Order
+            </Link>
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
+  // ── Verification form ──
+  return (
+    <div className="min-h-screen bg-[#FAF6F0] flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-md space-y-6">
+
+        {/* Header */}
+        <div className="text-center">
+          <img src={logo} alt="BTBbyA" className="mx-auto mb-4 h-16 w-16 object-contain" />
+          <h1 className="text-2xl font-bold text-[#2C2C2C]">Track Your Order</h1>
+          <p className="mt-1.5 text-sm text-[#2C2C2C]/50">Enter your order reference and phone number to continue.</p>
+        </div>
+
+        {/* Auto-loading state */}
+        {loading && (
+          <div className="flex items-center justify-center gap-2 rounded-2xl border border-[#C4717A]/10 bg-white px-4 py-5 text-sm text-[#2C2C2C]/50">
+            <RefreshCw className="h-4 w-4 animate-spin text-[#C4717A]" />
+            Verifying trusted device...
+          </div>
+        )}
+
+        {/* Form */}
+        {!loading && (
+          <form onSubmit={handleTrack} className="rounded-3xl border border-[#C4717A]/10 bg-white p-6 shadow-lg sm:p-8 space-y-5">
+
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-[#2C2C2C]/50">
+                Order / Inquiry Number
+              </label>
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#C4717A]/40 pointer-events-none" />
+                <input
+                  value={orderId}
+                  onChange={e => setOrderId(e.target.value)}
+                  placeholder="e.g. BTB-INQ-0042 or just 0042"
+                  className={`${inputCls} pl-10`}
+                  autoComplete="off"
+                />
+              </div>
+              {orderId && !/^BTB-/i.test(orderId.trim()) && orderId.trim().length > 0 && (
+                <p className="mt-1.5 text-xs text-[#C4717A]/70">
+                  Will be searched as: <strong>{normalizeOrderId(orderId)}</strong>
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-[#2C2C2C]/50">
+                Last 4 Digits of Phone Number
+              </label>
+              <input
+                value={phone4}
+                onChange={e => setPhone4(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="e.g. 4821"
+                maxLength={4}
+                inputMode="numeric"
+                className={inputCls}
+              />
+              <p className="mt-1.5 text-xs text-[#2C2C2C]/35">
+                e.g. if your number is 0917-123-<strong>4821</strong>, enter <strong>4821</strong>
+              </p>
+            </div>
+
+            {/* Remember device */}
+            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-[#C4717A]/10 bg-[#FAF6F0] px-4 py-3 transition hover:border-[#C4717A]/25">
+              <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-all ${
+                remember ? 'border-[#C4717A] bg-[#C4717A]' : 'border-[#C4717A]/30 bg-white'
+              }`}
+                onClick={() => setRemember(r => !r)}>
+                {remember && <CheckCircle className="h-3 w-3 text-white" />}
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-[#2C2C2C]">Remember this device</p>
+                <p className="text-xs text-[#2C2C2C]/40">Skip verification next time for {SESSION_DAYS} days</p>
+              </div>
+            </label>
+
+            {error && (
+              <div className="flex items-start gap-2.5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-red-600">{error}</p>
+                  {attempts > 1 && (
+                    <p className="text-xs text-red-400 mt-0.5">{5 - attempts} attempt{5 - attempts !== 1 ? 's' : ''} remaining.</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading || !orderId.trim() || phone4.length < 4}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#C4717A] py-3.5 text-sm font-bold text-white shadow-lg shadow-[#C4717A]/25 transition hover:bg-[#b36370] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {loading
+                ? <><RefreshCw className="h-4 w-4 animate-spin" /> Verifying...</>
+                : <><ShieldCheck className="h-4 w-4" /> View My Order</>}
+            </button>
+
+            <p className="text-center text-xs text-[#2C2C2C]/35">
+              Your data is protected · Only you can view your order details
+            </p>
+          </form>
+        )}
+
+        <p className="text-center text-xs text-[#2C2C2C]/40">
+          No order yet?{' '}
+          <Link to="/inquiry" className="text-[#C4717A] hover:underline font-semibold">Place a new order</Link>
+        </p>
+
+      </div>
+    </div>
+  );
+};
+
+export default TrackInquiry;

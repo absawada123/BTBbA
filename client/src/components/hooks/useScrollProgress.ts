@@ -1,0 +1,19 @@
+// client/src/components/hooks/useScrollProgress.ts
+import { useState, useEffect } from 'react';
+
+export function useScrollProgress(): number {
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const update = () => {
+      const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
+      const total = scrollHeight - clientHeight;
+      setProgress(total > 0 ? Math.round((scrollTop / total) * 100) : 0);
+    };
+    window.addEventListener('scroll', update, { passive: true });
+    update();
+    return () => window.removeEventListener('scroll', update);
+  }, []);
+
+  return progress;
+}

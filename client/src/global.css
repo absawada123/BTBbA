@@ -1,0 +1,27 @@
+/* client/src/global.css */
+@import "tailwindcss";
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    margin: 0;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: #FAF6F0;
+    color: #2C2C2C;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #FAF6F0; }
+  ::-webkit-scrollbar-thumb { background: #C4717A55; border-radius: 10px; }
+  ::-webkit-scrollbar-thumb:hover { background: #C4717A; }
+}
+
+@layer utilities {
+  .font-serif { font-family: 'Georgia', 'Times New Roman', serif; }
+}
