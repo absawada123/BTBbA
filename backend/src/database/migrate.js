@@ -1,26 +1,16 @@
 // backend/src/database/migrate.js
 
-const { initDb } = require('./schema');
-const { seed } = require('./seed');
+const { initSchema } = require('./schema');
+const { seedAdmin }  = require('./seed');
 
-function migrate() {
-  console.log('🔧 Running HabibiFunds migration...');
-
-  const db = initDb();
-
-  console.log('✅ Schema initialized.');
-
-  return db;
+async function migrate() {
+    initSchema();
+    await seedAdmin();
+    console.log('🌸 Migration complete.');
+    process.exit(0);
 }
 
-function migrateAndSeed() {
-  const db = migrate();
-
-  console.log('🌱 Running seed...');
-  seed();
-
-  console.log('✅ Migration and seed complete.');
-  return db;
-}
-
-module.exports = { migrate, migrateAndSeed };
+migrate().catch((err) => {
+    console.error('❌ Migration failed:', err);
+    process.exit(1);
+});

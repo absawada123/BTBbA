@@ -1,115 +1,104 @@
 // backend/src/database/schema.js
+
 const db = require('../config/db');
 
-function createSchema() {
-  db.exec(`
-    -- Users (admin/staff)
-    CREATE TABLE IF NOT EXISTS users (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      name         TEXT    NOT NULL,
-      email        TEXT    NOT NULL UNIQUE,
-      password     TEXT    NOT NULL,
-      role         TEXT    NOT NULL DEFAULT 'staff' CHECK(role IN ('admin','staff')),
-      is_active    INTEGER NOT NULL DEFAULT 1,
-      created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-      updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))
-    );
+const SCHEMA_SQL = `
 
-    -- Customers
-    CREATE TABLE IF NOT EXISTS customers (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      name         TEXT    NOT NULL,
-      contact      TEXT    NOT NULL,
-      email        TEXT,
-      address      TEXT,
-      notes        TEXT,
-      total_orders INTEGER NOT NULL DEFAULT 0,
-      created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-      updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))
-    );
+/* ----------------------------------------------------
+   1. ADMINS (Auth Accounts)
+   ---------------------------------------------------- */
+CREATE TABLE IF NOT EXISTS admins (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    username    TEXT UNIQUE NOT NULL,
+    email       TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role        TEXT CHECK(role IN ('super_admin', 'admin')) NOT NULL DEFAULT 'admin',
+    status      TEXT CHECK(status IN ('active', 'disabled')) NOT NULL DEFAULT 'active',
 
-    -- Inquiries / Orders
-    CREATE TABLE IF NOT EXISTS inquiries (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      tracking_id  TEXT    NOT NULL UNIQUE,
-      customer_id  INTEGER REFERENCES customers(id),
-      name         TEXT    NOT NULL,
-      contact      TEXT    NOT NULL,
-      email        TEXT,
-      service      TEXT    NOT NULL CHECK(service IN ('Custom Bouquet','Pop-Up Event','Pre-Order','Flower Shop Pick-Up')),
-      budget       TEXT    NOT NULL,
-      event_date   TEXT,
-      message      TEXT    NOT NULL,
-      status       TEXT    NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','confirmed','in_progress','ready','completed','cancelled')),
-      notes        TEXT,
-      assigned_to  INTEGER REFERENCES users(id),
-      created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-      updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))
-    );
+    totp_secret      TEXT,
+    totp_enabled     INTEGER DEFAULT 0,
+    recovery_codes   TEXT,
 
-    -- Products / Inventory
-    CREATE TABLE IF NOT EXISTS products (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      name         TEXT    NOT NULL,
-      category     TEXT    NOT NULL CHECK(category IN ('bouquet','arrangement','stem','accessory','dried','seasonal')),
-      description  TEXT,
-      price        REAL    NOT NULL DEFAULT 0,
-      stock        INTEGER NOT NULL DEFAULT 0,
-      low_stock_at INTEGER NOT NULL DEFAULT 5,
-      sku          TEXT    UNIQUE,
-      is_active    INTEGER NOT NULL DEFAULT 1,
-      created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-      updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))
-    );
+    last_login_at     TEXT,
+    last_login_ip     TEXT,
+    last_login_device TEXT,
 
-    -- POS Transactions
-    CREATE TABLE IF NOT EXISTS transactions (
-      id             INTEGER PRIMARY KEY AUTOINCREMENT,
-      reference      TEXT    NOT NULL UNIQUE,
-      customer_id    INTEGER REFERENCES customers(id),
-      customer_name  TEXT,
-      type           TEXT    NOT NULL DEFAULT 'sale' CHECK(type IN ('sale','popup','preorder','refund')),
-      total          REAL    NOT NULL DEFAULT 0,
-      discount       REAL    NOT NULL DEFAULT 0,
-      payment_method TEXT    NOT NULL DEFAULT 'cash' CHECK(payment_method IN ('cash','gcash','maya','bank','other')),
-      payment_status TEXT    NOT NULL DEFAULT 'paid' CHECK(payment_status IN ('paid','pending','partial','refunded')),
-      notes          TEXT,
-      created_by     INTEGER REFERENCES users(id),
-      created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
-    );
+    created_at  TEXT DEFAULT (datetime('now')),
+    updated_at  TEXT DEFAULT (datetime('now'))
+);
 
-    -- Transaction Items
-    CREATE TABLE IF NOT EXISTS transaction_items (
-      id             INTEGER PRIMARY KEY AUTOINCREMENT,
-      transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
-      product_id     INTEGER REFERENCES products(id),
-      name           TEXT    NOT NULL,
-      qty            INTEGER NOT NULL DEFAULT 1,
-      unit_price     REAL    NOT NULL DEFAULT 0,
-      subtotal       REAL    NOT NULL DEFAULT 0
-    );
+CREATE TRIGGER IF NOT EXISTS trg_admins_updated_at
+AFTER UPDATE ON admins
+BEGIN
+    UPDATE admins SET updated_at = datetime('now') WHERE id = OLD.id;
+END;
 
-    -- Expenses
-    CREATE TABLE IF NOT EXISTS expenses (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      category     TEXT    NOT NULL CHECK(category IN ('supplies','transport','marketing','utilities','salary','other')),
-      description  TEXT    NOT NULL,
-      amount       REAL    NOT NULL DEFAULT 0,
-      date         TEXT    NOT NULL DEFAULT (date('now')),
-      receipt_ref  TEXT,
-      created_by   INTEGER REFERENCES users(id),
-      created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
-    );
+/* ----------------------------------------------------
+   2. ADMIN SESSIONS (Trusted Device Tokens)
+   ---------------------------------------------------- */
+CREATE TABLE IF NOT EXISTS admin_sessions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id     INTEGER NOT NULL,
+    device_token TEXT NOT NULL,
+    ip_address   TEXT,
+    user_agent   TEXT,
+    last_seen_at TEXT DEFAULT (datetime('now')),
+    expires_at   TEXT NOT NULL,
+    created_at   TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE
+);
 
-    -- Indexes
-    CREATE INDEX IF NOT EXISTS idx_inquiries_tracking ON inquiries(tracking_id);
-    CREATE INDEX IF NOT EXISTS idx_inquiries_status   ON inquiries(status);
-    CREATE INDEX IF NOT EXISTS idx_transactions_date  ON transactions(created_at);
-    CREATE INDEX IF NOT EXISTS idx_products_category  ON products(category);
-    CREATE INDEX IF NOT EXISTS idx_expenses_date      ON expenses(date);
-  `);
+/* ----------------------------------------------------
+   3. LOGIN ATTEMPTS (Brute-force Protection)
+   ---------------------------------------------------- */
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip_address TEXT NOT NULL,
+    username   TEXT,
+    success    INTEGER DEFAULT 0,
+    attempted_at TEXT DEFAULT (datetime('now'))
+);
 
-  console.log('✅ Schema created successfully');
+/* ----------------------------------------------------
+   4. ACTIVITY LOGS (Admin Audit Trail)
+   ---------------------------------------------------- */
+CREATE TABLE IF NOT EXISTS activity_logs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id   INTEGER,
+    action     TEXT NOT NULL,
+    target     TEXT,
+    detail     TEXT,
+    ip_address TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE SET NULL
+);
+
+`;
+
+const MIGRATIONS_SQL = [
+    `ALTER TABLE admins ADD COLUMN totp_enabled INTEGER DEFAULT 0`,
+    `ALTER TABLE admins ADD COLUMN recovery_codes TEXT`,
+    `ALTER TABLE admins ADD COLUMN last_login_device TEXT`,
+];
+
+function initSchema() {
+    try {
+        console.log('Initializing Database Schema...');
+        db.exec(SCHEMA_SQL);
+
+        MIGRATIONS_SQL.forEach(sql => {
+            try {
+                db.prepare(sql).run();
+            } catch (e) {
+                if (!e.message.includes('duplicate column name')) throw e;
+            }
+        });
+
+        console.log('✅ Schema applied successfully.');
+    } catch (error) {
+        console.error('❌ Error applying schema:', error.message);
+        throw error;
+    }
 }
 
-module.exports = { createSchema };
+module.exports = { initSchema };
