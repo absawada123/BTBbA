@@ -5,7 +5,7 @@ import {
   Flower2, Calendar, MapPin, User, ClipboardList,
   CheckCircle, ChevronRight, ChevronLeft,
   Truck, ShoppingBag, Upload, Clock, Phone, Instagram,
-  Trash2, Save, Copy, Check, Download,
+  Trash2, Save, Copy, Check, Download, Plus, Minus,
 } from 'lucide-react';
 import logo from '../../../assets/images/logo.png';
 
@@ -52,8 +52,8 @@ const BUDGET_OPTIONS = [
 const TIME_SLOTS = ['9:00 AM', '11:00 AM', '1:00 PM', '3:00 PM', '5:00 PM', 'Custom'];
 
 const PICKUP_LOCATIONS = [
-  { id: 'krav', label: 'Krav Coffee', desc: 'Sta. Rosa, Laguna' },
-  { id: 'dali', label: 'DALI',        desc: 'Brgy. Labas, Sta. Rosa City, Laguna' },
+  { id: 'krav', label: 'Krav Coffee',  desc: 'Sta. Rosa, Laguna' },
+  { id: 'dali', label: 'DALI',         desc: 'Brgy. Labas, Sta. Rosa City, Laguna' },
 ];
 
 const ADD_ONS = [
@@ -67,10 +67,20 @@ const MAPS_EMBED   = 'https://www.google.com/maps?q=14.309361,121.109694&output=
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface FormData {
-  occasion: string;
+interface BouquetItem {
   bouquetType: string;
   bouquetItem: string;
+  bouquetName: string;
+  occasion: string;
+  details: string;
+  addOns: string[];
+  preferredBudget: string;
+  pegImage: File | null;
+  pegPreview: string;
+}
+
+interface FormData {
+  bouquets: BouquetItem[];
   targetDate: string;
   targetTime: string;
   customTime: string;
@@ -84,34 +94,31 @@ interface FormData {
   customerName: string;
   customerContact: string;
   customerSocial: string;
-  bouquetName: string;
-  details: string;
-  preferredBudget: string;
-  addOns: string[];
-  pegImage: File | null;
-  pegPreview: string;
 }
 
+const EMPTY_BOUQUET: BouquetItem = {
+  bouquetType: '', bouquetItem: '', bouquetName: '',
+  occasion: '', details: '', addOns: [], preferredBudget: '',
+  pegImage: null, pegPreview: '',
+};
+
 const EMPTY: FormData = {
-  occasion: '', bouquetType: '', bouquetItem: '',
+  bouquets: [{ ...EMPTY_BOUQUET }],
   targetDate: '', targetTime: '', customTime: '',
   fulfillment: '', pickupLocation: '',
   deliveryAddress: '', deliveryLandmark: '', receiverName: '', receiverContact: '',
   deliveryBooker: '',
   customerName: '', customerContact: '', customerSocial: '',
-  bouquetName: '', details: '', preferredBudget: '', addOns: [],
-  pegImage: null, pegPreview: '',
 };
 
 const DRAFT_KEY = 'btb_inquiry_draft';
 
 const STEPS = [
-  { label: 'Occasion',  icon: Flower2       },
-  { label: 'Schedule',  icon: Calendar      },
-  { label: 'Delivery',  icon: Truck         },
-  { label: 'Details',   icon: User          },
-  { label: 'Bouquet',   icon: ClipboardList },
-  { label: 'Review',    icon: CheckCircle   },
+  { label: 'Bouquets', icon: Flower2       },
+  { label: 'Schedule', icon: Calendar      },
+  { label: 'Delivery', icon: Truck         },
+  { label: 'Details',  icon: User          },
+  { label: 'Review',   icon: CheckCircle   },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -138,46 +145,14 @@ const CopyButton: React.FC<{ text: string; label?: string }> = ({ text, label })
   );
 };
 
-// ─── Order Card (canvas-based downloadable image) ─────────────────────────────
+// ─── Order Card (canvas) ──────────────────────────────────────────────────────
 
 const OrderCard: React.FC<{ form: FormData; orderNumber: string }> = ({ form, orderNumber }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [downloaded, setDownloaded] = useState(false);
 
-  const displayTime = form.targetTime === 'Custom' ? form.customTime : form.targetTime;
-  const pickupLabel = PICKUP_LOCATIONS.find(l => l.id === form.pickupLocation)?.label ?? '';
-
-  const lines: { bold?: boolean; text: string; sub?: boolean }[] = [
-    { bold: true,  text: '🌸 Beyond the Bloom by A' },
-    { sub: true,   text: orderNumber },
-    { text: '' },
-    { bold: true,  text: `Name of customer: ${form.customerName}` },
-    { text: `Contact: ${form.customerContact}` },
-    ...(form.customerSocial ? [{ text: `Social: ${form.customerSocial}` }] : []),
-    { text: '' },
-    { bold: true,  text: `Target date: ${form.targetDate}` },
-    { bold: true,  text: `Target time: ${displayTime}` },
-    { bold: true,  text: `Pick-up / Delivery: ${form.fulfillment === 'pickup' ? `Pickup — ${pickupLabel}` : 'Delivery'}` },
-    ...(form.fulfillment === 'delivery' && form.deliveryBooker === 'us' ? [
-      { text: `Complete address: ${form.deliveryAddress}` },
-      ...(form.deliveryLandmark ? [{ text: `Nearest landmark: ${form.deliveryLandmark}` }] : []),
-      { text: `Name of receiver: ${form.receiverName}` },
-      { text: `Contact number: ${form.receiverContact}` },
-    ] : []),
-    { text: '' },
-    { bold: true,  text: `Name of bouquet: ${form.bouquetItem ? form.bouquetItem.split(' —')[0] : form.bouquetName}` },
-    { text: `Occasion: ${OCCASIONS.find(o => o.id === form.occasion)?.label ?? ''}` },
-    ...(form.preferredBudget ? [{ text: `Preferred budget: ${form.preferredBudget}` }] : []),
-    { text: '' },
-    { bold: true,  text: `Details: ${form.details || '—'}` },
-    ...(form.addOns.length ? [{ text: `Add-ons: ${form.addOns.join(', ')}` }] : []),
-    { text: '' },
-    { sub: true,   text: 'Total: TBD upon approval' },
-    { sub: true,   text: 'DP: TBD upon approval' },
-    { sub: true,   text: 'Balance: TBD upon approval' },
-    { text: '' },
-    { sub: true,   text: 'btbya.com · Sta. Rosa, Laguna' },
-  ];
+  const displayTime  = form.targetTime === 'Custom' ? form.customTime : form.targetTime;
+  const pickupLabel  = PICKUP_LOCATIONS.find(l => l.id === form.pickupLocation)?.label ?? '';
 
   const download = () => {
     const canvas = canvasRef.current;
@@ -185,69 +160,72 @@ const OrderCard: React.FC<{ form: FormData; orderNumber: string }> = ({ form, or
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const W = 600;
-    const PAD = 36;
-    const LINE_H = 22;
+    const W = 600, PAD = 36, LINE_H = 22;
 
-    // measure height
-    const totalLines = lines.length;
-    const H = PAD * 2 + totalLines * LINE_H + 60;
-    canvas.width  = W;
-    canvas.height = H;
+    const lines: { bold?: boolean; text: string; sub?: boolean }[] = [
+      { bold: true, text: '🌸 Beyond the Bloom by A' },
+      { sub:  true, text: orderNumber },
+      { text: '' },
+      { bold: true, text: `Customer: ${form.customerName}` },
+      { text: `Contact: ${form.customerContact}` },
+      ...(form.customerSocial ? [{ text: `Social: ${form.customerSocial}` }] : []),
+      { text: '' },
+      { bold: true, text: `Target date: ${form.targetDate}` },
+      { bold: true, text: `Target time: ${displayTime}` },
+      { bold: true, text: `Fulfillment: ${form.fulfillment === 'pickup' ? `Pickup — ${pickupLabel}` : 'Delivery'}` },
+      ...(form.fulfillment === 'delivery' && form.deliveryBooker === 'us' ? [
+        { text: `Address: ${form.deliveryAddress}` },
+        ...(form.deliveryLandmark ? [{ text: `Landmark: ${form.deliveryLandmark}` }] : []),
+        { text: `Receiver: ${form.receiverName} · ${form.receiverContact}` },
+      ] : []),
+      { text: '' },
+      ...form.bouquets.flatMap((b, i) => [
+        { bold: true, text: `Bouquet ${form.bouquets.length > 1 ? `#${i + 1}` : ''}: ${b.bouquetItem ? b.bouquetItem.split(' —')[0] : b.bouquetName}` },
+        ...(b.occasion    ? [{ text: `Occasion: ${OCCASIONS.find(o => o.id === b.occasion)?.label ?? b.occasion}` }] : []),
+        ...(b.preferredBudget ? [{ text: `Budget: ${b.preferredBudget}` }] : []),
+        ...(b.details     ? [{ text: `Details: ${b.details}` }] : []),
+        ...(b.addOns.length ? [{ text: `Add-ons: ${b.addOns.join(', ')}` }] : []),
+        { text: '' },
+      ]),
+      { sub: true, text: 'Total: TBD upon approval' },
+      { sub: true, text: 'DP: TBD upon approval' },
+      { sub: true, text: 'btbya.com · Sta. Rosa, Laguna' },
+    ];
 
-    // background
+    const H = PAD * 2 + lines.length * LINE_H + 60;
+    canvas.width = W; canvas.height = H;
+
     ctx.fillStyle = '#FAF6F0';
     ctx.fillRect(0, 0, W, H);
 
-    // top accent bar
     const grad = ctx.createLinearGradient(0, 0, W, 0);
     grad.addColorStop(0, '#C4717A');
     grad.addColorStop(0.5, '#C9A84C');
     grad.addColorStop(1, '#6B7C5C');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, 5);
-
-    // bottom accent bar
-    ctx.fillStyle = grad;
     ctx.fillRect(0, H - 5, W, 5);
-
-    // border
     ctx.strokeStyle = '#C4717A33';
     ctx.lineWidth   = 1;
     ctx.strokeRect(0.5, 5, W - 1, H - 10);
 
     let y = PAD + 20;
     for (const line of lines) {
-      if (line.text === '') { y += LINE_H * 0.4; continue; }
-      if (line.bold) {
-        ctx.font      = 'bold 13px system-ui, sans-serif';
-        ctx.fillStyle = '#2C2C2C';
-      } else if (line.sub) {
-        ctx.font      = '11px system-ui, sans-serif';
-        ctx.fillStyle = '#2C2C2C99';
-      } else {
-        ctx.font      = '12px system-ui, sans-serif';
-        ctx.fillStyle = '#2C2C2C';
-      }
-
-      // word wrap
+      if (!line.text) { y += LINE_H * 0.4; continue; }
+      ctx.font      = line.bold ? 'bold 13px system-ui,sans-serif' : line.sub ? '11px system-ui,sans-serif' : '12px system-ui,sans-serif';
+      ctx.fillStyle = line.sub ? '#2C2C2C99' : '#2C2C2C';
       const words = line.text.split(' ');
       let row = '';
       for (const word of words) {
         const test = row ? `${row} ${word}` : word;
-        if (ctx.measureText(test).width > W - PAD * 2) {
-          ctx.fillText(row, PAD, y);
-          y  += LINE_H;
-          row = word;
-        } else {
-          row = test;
-        }
+        if (ctx.measureText(test).width > W - PAD * 2) { ctx.fillText(row, PAD, y); y += LINE_H; row = word; }
+        else row = test;
       }
       if (row) { ctx.fillText(row, PAD, y); y += LINE_H; }
     }
 
     const a = document.createElement('a');
-    a.href     = canvas.toDataURL('image/png');
+    a.href = canvas.toDataURL('image/png');
     a.download = `${orderNumber}.png`;
     a.click();
     setDownloaded(true);
@@ -257,76 +235,250 @@ const OrderCard: React.FC<{ form: FormData; orderNumber: string }> = ({ form, or
   return (
     <>
       <canvas ref={canvasRef} className="hidden" />
-      <button
-        type="button" onClick={download}
-        className="inline-flex items-center gap-2 rounded-full bg-[#2C2C2C] px-6 py-2.5 text-sm font-bold text-white transition hover:bg-[#444] active:scale-95"
-      >
-        {downloaded
-          ? <><Check className="h-4 w-4" /> Downloaded!</>
-          : <><Download className="h-4 w-4" /> Download Order Card</>}
+      <button type="button" onClick={download}
+        className="inline-flex items-center gap-2 rounded-full bg-[#2C2C2C] px-6 py-2.5 text-sm font-bold text-white transition hover:bg-[#444] active:scale-95">
+        {downloaded ? <><Check className="h-4 w-4" />Downloaded!</> : <><Download className="h-4 w-4" />Download Order Card</>}
       </button>
     </>
   );
 };
 
-// ─── Build plain-text summary ─────────────────────────────────────────────────
+// ─── Summary text ─────────────────────────────────────────────────────────────
 
 function buildSummaryText(form: FormData, orderNumber: string): string {
-  const displayTime  = form.targetTime === 'Custom' ? form.customTime : form.targetTime;
-  const pickupLabel  = PICKUP_LOCATIONS.find(l => l.id === form.pickupLocation)?.label ?? '';
-  const bouquetLabel = form.bouquetItem ? form.bouquetItem.split(' —')[0] : form.bouquetName;
-  const occasionLabel = OCCASIONS.find(o => o.id === form.occasion)?.label ?? '';
+  const displayTime = form.targetTime === 'Custom' ? form.customTime : form.targetTime;
+  const pickupLabel = PICKUP_LOCATIONS.find(l => l.id === form.pickupLocation)?.label ?? '';
 
-  const lines = [
+  return [
     '🌸 Beyond the Bloom by A',
     `Order Reference: ${orderNumber}`,
     '',
-    `Name of customer: ${form.customerName}`,
+    `Customer: ${form.customerName}`,
     `Contact: ${form.customerContact}`,
     ...(form.customerSocial ? [`Social: ${form.customerSocial}`] : []),
     '',
     `Target date: ${form.targetDate}`,
     `Target time: ${displayTime}`,
-    `Pick-up / Delivery: ${form.fulfillment === 'pickup' ? `Pickup — ${pickupLabel}` : 'Delivery'}`,
+    `Fulfillment: ${form.fulfillment === 'pickup' ? `Pickup — ${pickupLabel}` : 'Delivery'}`,
     ...(form.fulfillment === 'delivery' && form.deliveryBooker === 'us' ? [
-      `Complete address: ${form.deliveryAddress}`,
-      ...(form.deliveryLandmark ? [`Nearest landmark: ${form.deliveryLandmark}`] : []),
-      `Name of receiver: ${form.receiverName}`,
-      `Contact number: ${form.receiverContact}`,
+      `Address: ${form.deliveryAddress}`,
+      ...(form.deliveryLandmark ? [`Landmark: ${form.deliveryLandmark}`] : []),
+      `Receiver: ${form.receiverName} · ${form.receiverContact}`,
     ] : []),
     '',
-    `Name of bouquet: ${bouquetLabel}`,
-    `Occasion: ${occasionLabel}`,
-    ...(form.preferredBudget ? [`Preferred budget: ${form.preferredBudget}`] : []),
-    '',
-    `Details: ${form.details || '—'}`,
-    ...(form.addOns.length ? [`Notes / Add-ons: ${form.addOns.join(', ')}`] : []),
-    '',
+    ...form.bouquets.flatMap((b, i) => [
+      `--- Bouquet ${form.bouquets.length > 1 ? `#${i + 1}` : ''} ---`,
+      `Name: ${b.bouquetItem ? b.bouquetItem.split(' —')[0] : b.bouquetName}`,
+      ...(b.occasion ? [`Occasion: ${OCCASIONS.find(o => o.id === b.occasion)?.label ?? b.occasion}`] : []),
+      ...(b.preferredBudget ? [`Budget: ${b.preferredBudget}`] : []),
+      ...(b.details  ? [`Details: ${b.details}`] : []),
+      ...(b.addOns.length ? [`Add-ons: ${b.addOns.join(', ')}`] : []),
+      '',
+    ]),
     'Total: TBD upon approval',
     'DP: TBD upon approval',
-    'Balance: TBD upon approval',
-  ];
-  return lines.join('\n');
+  ].join('\n');
 }
+
+// ─── Bouquet Card (per bouquet in Step 1) ─────────────────────────────────────
+
+const BouquetCard: React.FC<{
+  bouquet: BouquetItem;
+  index: number;
+  total: number;
+  onChange: (patch: Partial<BouquetItem>) => void;
+  onRemove: () => void;
+}> = ({ bouquet, index, total, onChange, onRemove }) => {
+  const toggleAddOn = (a: string) =>
+    onChange({ addOns: bouquet.addOns.includes(a) ? bouquet.addOns.filter(x => x !== a) : [...bouquet.addOns, a] });
+
+  return (
+    <div className="rounded-2xl border border-[#C4717A]/15 bg-white p-5 space-y-5 shadow-sm">
+      {/* Card header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#C4717A]/10">
+            <Flower2 className="h-3.5 w-3.5 text-[#C4717A]" />
+          </div>
+          <span className="text-sm font-bold text-[#2C2C2C]">
+            {total > 1 ? `Bouquet #${index + 1}` : 'Your Bouquet'}
+          </span>
+        </div>
+        {total > 1 && (
+          <button type="button" onClick={onRemove}
+            className="inline-flex items-center gap-1 rounded-full border border-red-200 px-2.5 py-1 text-xs font-semibold text-red-400 transition hover:bg-red-50 active:scale-95">
+            <Trash2 className="h-3 w-3" /> Remove
+          </button>
+        )}
+      </div>
+
+      {/* Bouquet Type */}
+      <div>
+        <FieldLabel>Bouquet Type</FieldLabel>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {BOUQUET_TYPES.map(b => (
+            <button key={b.id} type="button"
+              onClick={() => onChange({ bouquetType: b.id, bouquetName: b.label, bouquetItem: '' })}
+              className={`flex items-start gap-3 rounded-2xl border p-3.5 text-left transition-all ${
+                bouquet.bouquetType === b.id
+                  ? 'border-[#C4717A] bg-[#C4717A]/8 shadow-sm'
+                  : 'border-[#C4717A]/15 bg-[#FAF6F0] hover:border-[#C4717A]/40'}`}>
+              <div className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 flex items-center justify-center ${
+                bouquet.bouquetType === b.id ? 'border-[#C4717A]' : 'border-[#C4717A]/30'}`}>
+                {bouquet.bouquetType === b.id && <div className="h-2 w-2 rounded-full bg-[#C4717A]" />}
+              </div>
+              <div>
+                <p className={`text-sm font-bold ${bouquet.bouquetType === b.id ? 'text-[#C4717A]' : 'text-[#2C2C2C]'}`}>{b.label}</p>
+                <p className="mt-0.5 text-xs text-[#C9A84C] font-semibold">{b.range}</p>
+                <p className="mt-0.5 text-xs text-[#2C2C2C]/50">{b.desc}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {bouquet.bouquetType && bouquet.bouquetType !== 'custom' && (
+          <div className="mt-3 space-y-1.5">
+            <p className="text-xs font-semibold text-[#2C2C2C]/45 uppercase tracking-widest">Specific bouquet</p>
+            {BOUQUET_TYPES.find(b => b.id === bouquet.bouquetType)?.items.map(item => (
+              <button key={item} type="button"
+                onClick={() => onChange({ bouquetItem: item, bouquetName: item.split(' —')[0] })}
+                className={`flex w-full items-center justify-between rounded-xl border px-4 py-2.5 text-left text-xs transition-all ${
+                  bouquet.bouquetItem === item
+                    ? 'border-[#C4717A] bg-[#C4717A]/8 font-semibold text-[#C4717A]'
+                    : 'border-[#C4717A]/10 bg-white text-[#2C2C2C]/60 hover:border-[#C4717A]/30'}`}>
+                <span>{item.split(' —')[0]}</span>
+                <span className="font-semibold text-[#C9A84C]">{item.split('— ')[1]}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Occasion (optional) */}
+      <div>
+        <FieldLabel optional>Occasion</FieldLabel>
+        <div className="grid grid-cols-4 gap-2">
+          {OCCASIONS.map(o => (
+            <button key={o.id} type="button"
+              onClick={() => onChange({ occasion: bouquet.occasion === o.id ? '' : o.id })}
+              className={`flex flex-col items-center gap-1 rounded-2xl border p-2.5 text-center transition-all ${
+                bouquet.occasion === o.id
+                  ? 'border-[#C4717A] bg-[#C4717A]/8 shadow-sm'
+                  : 'border-[#C4717A]/15 bg-[#FAF6F0] hover:border-[#C4717A]/40'}`}>
+              <span className="text-xl">{o.icon}</span>
+              <span className={`text-[10px] font-semibold leading-tight ${bouquet.occasion === o.id ? 'text-[#C4717A]' : 'text-[#2C2C2C]/60'}`}>{o.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Details */}
+      <div>
+        <FieldLabel optional>Order Details</FieldLabel>
+        <TextArea rows={3} value={bouquet.details}
+          onChange={e => onChange({ details: e.target.value })}
+          placeholder="Preferred flowers, colors, size, message for recipient, etc." />
+      </div>
+
+      {/* Add-Ons */}
+      <div>
+        <FieldLabel optional>Add-Ons</FieldLabel>
+        <div className="flex flex-wrap gap-2">
+          {ADD_ONS.map(a => (
+            <button key={a} type="button" onClick={() => toggleAddOn(a)}
+              className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                bouquet.addOns.includes(a)
+                  ? 'border-[#C9A84C] bg-[#C9A84C] text-white'
+                  : 'border-[#C9A84C]/30 bg-white text-[#2C2C2C]/55 hover:border-[#C9A84C]/60'}`}>
+              {a}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Budget */}
+      <div>
+        <FieldLabel optional>Preferred Budget</FieldLabel>
+        <div className="flex flex-wrap gap-2">
+          {BUDGET_OPTIONS.map(b => (
+            <button key={b} type="button"
+              onClick={() => onChange({ preferredBudget: bouquet.preferredBudget === b ? '' : b })}
+              className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition-all ${
+                bouquet.preferredBudget === b
+                  ? 'border-[#C4717A] bg-[#C4717A] text-white'
+                  : 'border-[#C4717A]/20 bg-white text-[#2C2C2C]/55 hover:border-[#C4717A]/50'}`}>
+              {b}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Peg Image */}
+      <div>
+        <FieldLabel optional>Peg / Inspiration Photo</FieldLabel>
+        {bouquet.pegPreview ? (
+          <div className="relative w-full">
+            <img src={bouquet.pegPreview} alt="Peg" className="h-40 w-full rounded-2xl object-cover border border-[#C4717A]/15" />
+            <button type="button" onClick={() => onChange({ pegImage: null, pegPreview: '' })}
+              className="absolute top-2 right-2 rounded-full bg-white p-1.5 shadow border border-red-100 text-red-400 hover:text-red-600 transition">
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <label className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-[#C4717A]/20 bg-[#FAF6F0] py-6 text-center transition hover:border-[#C4717A]/40">
+            <Upload className="h-5 w-5 text-[#C4717A]/40" />
+            <span className="text-xs text-[#2C2C2C]/45">Pinterest peg, TikTok screenshot, or any reference</span>
+            <span className="text-xs text-[#C4717A]/60 font-semibold">Browse file</span>
+            <input type="file" accept="image/*" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) onChange({ pegImage: f, pegPreview: URL.createObjectURL(f) }); }} />
+          </label>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const InquiryForm: React.FC = () => {
-  const [step, setStep]             = useState(0);
-  const [form, setForm]             = useState<FormData>(EMPTY);
-  const [submitted, setSubmitted]   = useState(false);
-  const [draftSaved, setDraftSaved] = useState(false);
-  const [orderNumber]               = useState(() => `BTB-INQ-${String(Date.now()).slice(-4)}`);
+  const [step, setStep]               = useState(0);
+  const [form, setForm]               = useState<FormData>(EMPTY);
+  const [submitted, setSubmitted]     = useState(false);
+  const [submitting, setSubmitting]   = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [draftSaved, setDraftSaved]   = useState(false);
+  const [orderNumber, setOrderNumber] = useState('');
+  const [idLoading, setIdLoading]     = useState(true);
 
+  // Fetch incremental order ID on mount
+  useEffect(() => {
+    fetch('/api/inquiries/next-id')
+      .then(r => r.json())
+      .then(data => setOrderNumber(data.nextId))
+      .catch(() => setOrderNumber(`BTB-INQ-${String(Date.now()).slice(-4)}`))
+      .finally(() => setIdLoading(false));
+  }, []);
+
+  // Draft save/load
   useEffect(() => {
     try {
       const raw = localStorage.getItem(DRAFT_KEY);
-      if (raw) { const p = JSON.parse(raw); setForm({ ...EMPTY, ...p, pegImage: null }); }
+      if (raw) {
+        const p = JSON.parse(raw);
+        setForm({
+          ...EMPTY,
+          ...p,
+          bouquets: (p.bouquets ?? [EMPTY_BOUQUET]).map((b: BouquetItem) => ({ ...EMPTY_BOUQUET, ...b, pegImage: null, pegPreview: '' })),
+        });
+      }
     } catch {}
   }, []);
 
   useEffect(() => {
-    const { pegImage, ...saveable } = form;
+    const saveable = {
+      ...form,
+      bouquets: form.bouquets.map(({ pegImage, ...rest }) => rest),
+    };
     localStorage.setItem(DRAFT_KEY, JSON.stringify(saveable));
     setDraftSaved(true);
     const t = setTimeout(() => setDraftSaved(false), 2000);
@@ -334,22 +486,31 @@ const InquiryForm: React.FC = () => {
   }, [form]);
 
   const set = (patch: Partial<FormData>) => setForm(prev => ({ ...prev, ...patch }));
-  const toggleAddOn = (a: string) =>
-    set({ addOns: form.addOns.includes(a) ? form.addOns.filter(x => x !== a) : [...form.addOns, a] });
+
+  const setBouquet = (index: number, patch: Partial<BouquetItem>) =>
+    setForm(prev => ({
+      ...prev,
+      bouquets: prev.bouquets.map((b, i) => i === index ? { ...b, ...patch } : b),
+    }));
+
+  const addBouquet = () =>
+    setForm(prev => ({ ...prev, bouquets: [...prev.bouquets, { ...EMPTY_BOUQUET }] }));
+
+  const removeBouquet = (index: number) =>
+    setForm(prev => ({ ...prev, bouquets: prev.bouquets.filter((_, i) => i !== index) }));
+
   const clearDraft = () => { localStorage.removeItem(DRAFT_KEY); setForm(EMPTY); setStep(0); };
   const today = new Date().toISOString().split('T')[0];
 
   const canNext = (): boolean => {
-    if (step === 0) return !!form.occasion && !!form.bouquetType;
+    if (step === 0) return form.bouquets.every(b => !!b.bouquetType);
     if (step === 1) return !!form.targetDate && !!form.targetTime && (form.targetTime !== 'Custom' || !!form.customTime);
     if (step === 2) {
       if (!form.fulfillment) return false;
       if (form.fulfillment === 'pickup') return !!form.pickupLocation;
       if (form.fulfillment === 'delivery') {
         if (!form.deliveryBooker) return false;
-        // "customer books rider" — no delivery address needed
         if (form.deliveryBooker === 'customer') return true;
-        // "we book" — need delivery details
         return !!form.deliveryAddress && !!form.receiverName && !!form.receiverContact;
       }
     }
@@ -357,7 +518,7 @@ const InquiryForm: React.FC = () => {
     return true;
   };
 
-  // ── Submitted Screen ──────────────────────────────────────────────────────
+  // ── Submitted Screen ────────────────────────────────────────────────────────
   if (submitted) {
     const summaryText = buildSummaryText(form, orderNumber);
     return (
@@ -370,18 +531,21 @@ const InquiryForm: React.FC = () => {
             <h2 className="text-2xl font-bold text-[#2C2C2C]">Inquiry Received!</h2>
             <p className="mt-2 text-sm text-[#2C2C2C]/55 leading-relaxed">
               Thank you, <strong>{form.customerName}</strong>! We'll confirm your inquiry within 24 hours.
-              Payment details will be shared once your order is approved.
             </p>
           </div>
 
-          {/* Reference */}
           <div className="rounded-2xl border border-[#C4717A]/15 bg-white px-5 py-4 mb-4">
             <p className="text-xs text-[#C4717A]/60 font-semibold uppercase tracking-widest">Inquiry Reference</p>
             <p className="text-2xl font-bold text-[#C4717A] mt-0.5">{orderNumber}</p>
             <p className="text-xs text-[#2C2C2C]/40 mt-0.5">Save this to track your inquiry.</p>
           </div>
 
-          {/* Summary text box */}
+          {form.bouquets.length > 1 && (
+            <div className="rounded-2xl border border-[#C9A84C]/20 bg-[#C9A84C]/5 px-4 py-3 mb-4 text-xs text-[#C9A84C] font-semibold">
+              🌸 {form.bouquets.length} bouquets included in this inquiry
+            </div>
+          )}
+
           <div className="rounded-2xl border border-[#C4717A]/10 bg-white mb-3 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-[#C4717A]/10">
               <p className="text-xs font-semibold uppercase tracking-widest text-[#2C2C2C]/40">Order Summary</p>
@@ -392,12 +556,10 @@ const InquiryForm: React.FC = () => {
             </pre>
           </div>
 
-          {/* Download card */}
           <div className="flex flex-col gap-3 items-stretch mb-4">
             <OrderCard form={form} orderNumber={orderNumber} />
           </div>
 
-          {/* Nav */}
           <div className="flex flex-col gap-3 sm:flex-row justify-center">
             <Link to="/track"
               className="inline-flex items-center justify-center gap-2 rounded-full bg-[#C4717A] px-6 py-2.5 text-sm font-bold text-white transition hover:bg-[#b05f68]">
@@ -413,70 +575,36 @@ const InquiryForm: React.FC = () => {
     );
   }
 
-  // ── Step Renders ──────────────────────────────────────────────────────────
+  // ── Step Renders ────────────────────────────────────────────────────────────
   const renderStep = () => {
     switch (step) {
 
-      // STEP 1 — Occasion & Bouquet
+      // STEP 1 — Bouquets
       case 0: return (
-        <div className="space-y-7">
-          <div>
-            <FieldLabel>Select Occasion</FieldLabel>
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-              {OCCASIONS.map(o => (
-                <button key={o.id} type="button" onClick={() => set({ occasion: o.id })}
-                  className={`flex flex-col items-center gap-1.5 rounded-2xl border p-3.5 text-center transition-all ${
-                    form.occasion === o.id
-                      ? 'border-[#C4717A] bg-[#C4717A]/8 shadow-sm'
-                      : 'border-[#C4717A]/15 bg-[#FAF6F0] hover:border-[#C4717A]/40'}`}>
-                  <span className="text-2xl">{o.icon}</span>
-                  <span className={`text-xs font-semibold ${form.occasion === o.id ? 'text-[#C4717A]' : 'text-[#2C2C2C]/60'}`}>{o.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+        <div className="space-y-4">
+          {form.bouquets.map((bouquet, i) => (
+            <BouquetCard
+              key={i}
+              bouquet={bouquet}
+              index={i}
+              total={form.bouquets.length}
+              onChange={patch => setBouquet(i, patch)}
+              onRemove={() => removeBouquet(i)}
+            />
+          ))}
 
-          <div>
-            <FieldLabel>Choose Bouquet Type</FieldLabel>
-            <p className="mb-3 text-xs text-[#2C2C2C]/40">Prices may vary depending on flower availability and season.</p>
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-              {BOUQUET_TYPES.map(b => (
-                <button key={b.id} type="button"
-                  onClick={() => set({ bouquetType: b.id, bouquetName: b.label, bouquetItem: '' })}
-                  className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition-all ${
-                    form.bouquetType === b.id
-                      ? 'border-[#C4717A] bg-[#C4717A]/8 shadow-sm'
-                      : 'border-[#C4717A]/15 bg-[#FAF6F0] hover:border-[#C4717A]/40'}`}>
-                  <div className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 flex items-center justify-center ${
-                    form.bouquetType === b.id ? 'border-[#C4717A]' : 'border-[#C4717A]/30'}`}>
-                    {form.bouquetType === b.id && <div className="h-2 w-2 rounded-full bg-[#C4717A]" />}
-                  </div>
-                  <div>
-                    <p className={`text-sm font-bold ${form.bouquetType === b.id ? 'text-[#C4717A]' : 'text-[#2C2C2C]'}`}>{b.label}</p>
-                    <p className="mt-0.5 text-xs text-[#C9A84C] font-semibold">{b.range}</p>
-                    <p className="mt-0.5 text-xs text-[#2C2C2C]/50">{b.desc}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
+          {/* Add bouquet button */}
+          <button type="button" onClick={addBouquet}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#C4717A]/20 py-4 text-sm font-semibold text-[#C4717A]/60 transition hover:border-[#C4717A]/50 hover:text-[#C4717A] hover:bg-[#C4717A]/3 active:scale-[0.99]">
+            <Plus className="h-4 w-4" />
+            Add Another Bouquet
+          </button>
 
-            {form.bouquetType && form.bouquetType !== 'custom' && (
-              <div className="mt-3 space-y-1.5">
-                <p className="text-xs font-semibold text-[#2C2C2C]/45 uppercase tracking-widest">Specific bouquet</p>
-                {BOUQUET_TYPES.find(b => b.id === form.bouquetType)?.items.map(item => (
-                  <button key={item} type="button"
-                    onClick={() => set({ bouquetItem: item, bouquetName: item.split(' —')[0] })}
-                    className={`flex w-full items-center justify-between rounded-xl border px-4 py-2.5 text-left text-xs transition-all ${
-                      form.bouquetItem === item
-                        ? 'border-[#C4717A] bg-[#C4717A]/8 font-semibold text-[#C4717A]'
-                        : 'border-[#C4717A]/10 bg-white text-[#2C2C2C]/60 hover:border-[#C4717A]/30'}`}>
-                    <span>{item.split(' —')[0]}</span>
-                    <span className="font-semibold text-[#C9A84C]">{item.split('— ')[1]}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          {form.bouquets.length > 1 && (
+            <p className="text-center text-xs text-[#2C2C2C]/40">
+              All bouquets will share one order reference and schedule.
+            </p>
+          )}
         </div>
       );
 
@@ -496,7 +624,7 @@ const InquiryForm: React.FC = () => {
               return (d.getDay() !== 0 && d.getDay() !== 6) ? (
                 <p className="mt-2 flex items-center gap-1.5 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
                   <Clock className="h-3.5 w-3.5 shrink-0" />
-                  We primarily operate on weekends. Weekday orders depend on availability — we'll confirm with you.
+                  We primarily operate on weekends. Weekday orders depend on availability.
                 </p>
               ) : null;
             })()}
@@ -531,7 +659,7 @@ const InquiryForm: React.FC = () => {
         </div>
       );
 
-      // STEP 3 — Pickup or Delivery
+      // STEP 3 — Delivery
       case 2: return (
         <div className="space-y-6">
           <div>
@@ -554,7 +682,6 @@ const InquiryForm: React.FC = () => {
             </div>
           </div>
 
-          {/* PICKUP */}
           {form.fulfillment === 'pickup' && (
             <div>
               <FieldLabel>Pickup Location</FieldLabel>
@@ -573,13 +700,9 @@ const InquiryForm: React.FC = () => {
                   </button>
                 ))}
               </div>
-              <p className="mt-3 rounded-xl bg-[#FAF6F0] border border-[#C4717A]/10 px-4 py-2.5 text-xs text-[#2C2C2C]/55">
-                Payment: <strong>Cash on pickup</strong> or <strong>online payment</strong> — QR code provided upon order approval.
-              </p>
             </div>
           )}
 
-          {/* DELIVERY */}
           {form.fulfillment === 'delivery' && (
             <div className="space-y-5">
               <div>
@@ -601,7 +724,6 @@ const InquiryForm: React.FC = () => {
                 </div>
               </div>
 
-              {/* Customer books — show our address + map only */}
               {form.deliveryBooker === 'customer' && (
                 <div className="space-y-3">
                   <p className="text-xs text-[#2C2C2C]/55 leading-relaxed">
@@ -630,7 +752,6 @@ const InquiryForm: React.FC = () => {
                 </div>
               )}
 
-              {/* We book — show full delivery address fields */}
               {form.deliveryBooker === 'us' && (
                 <div className="space-y-4">
                   <div>
@@ -699,124 +820,87 @@ const InquiryForm: React.FC = () => {
         </div>
       );
 
-      // STEP 5 — Bouquet Details
-      case 4: return (
-        <div className="space-y-5">
-          <div>
-            <FieldLabel>Bouquet Name / Label</FieldLabel>
-            <TextInput value={form.bouquetName} onChange={e => set({ bouquetName: e.target.value })}
-              placeholder="e.g. Pink Premium Bouquet" />
-          </div>
-          <div>
-            <FieldLabel optional>Order Details</FieldLabel>
-            <TextArea rows={4} value={form.details} onChange={e => set({ details: e.target.value })}
-              placeholder="Preferred flowers, colors, size, message for recipient, etc. You may leave this blank." />
-          </div>
-          <div>
-            <FieldLabel optional>Add-Ons</FieldLabel>
-            <div className="flex flex-wrap gap-2">
-              {ADD_ONS.map(a => (
-                <button key={a} type="button" onClick={() => toggleAddOn(a)}
-                  className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-all ${
-                    form.addOns.includes(a)
-                      ? 'border-[#C9A84C] bg-[#C9A84C] text-white'
-                      : 'border-[#C9A84C]/30 bg-white text-[#2C2C2C]/55 hover:border-[#C9A84C]/60'}`}>
-                  {a}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <FieldLabel optional>Preferred Budget</FieldLabel>
-            <div className="flex flex-wrap gap-2">
-              {BUDGET_OPTIONS.map(b => (
-                <button key={b} type="button" onClick={() => set({ preferredBudget: b })}
-                  className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition-all ${
-                    form.preferredBudget === b
-                      ? 'border-[#C4717A] bg-[#C4717A] text-white'
-                      : 'border-[#C4717A]/20 bg-white text-[#2C2C2C]/55 hover:border-[#C4717A]/50'}`}>
-                  {b}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <FieldLabel optional>Peg / Inspiration Photo</FieldLabel>
-            {form.pegPreview ? (
-              <div className="relative w-full">
-                <img src={form.pegPreview} alt="Peg" className="h-40 w-full rounded-2xl object-cover border border-[#C4717A]/15" />
-                <button type="button" onClick={() => set({ pegImage: null, pegPreview: '' })}
-                  className="absolute top-2 right-2 rounded-full bg-white p-1.5 shadow border border-red-100 text-red-400 hover:text-red-600 transition">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ) : (
-              <label className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-[#C4717A]/20 bg-[#FAF6F0] py-8 text-center transition hover:border-[#C4717A]/40">
-                <Upload className="h-6 w-6 text-[#C4717A]/40" />
-                <span className="text-xs text-[#2C2C2C]/45">Upload Pinterest peg, TikTok screenshot, or any reference</span>
-                <span className="text-xs text-[#C4717A]/60 font-semibold">Browse file</span>
-                <input type="file" accept="image/*" className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) set({ pegImage: f, pegPreview: URL.createObjectURL(f) }); }} />
-              </label>
-            )}
-          </div>
-        </div>
-      );
-
-      // STEP 6 — Review
-      case 5: {
+      // STEP 5 — Review
+      case 4: {
         const displayTime  = form.targetTime === 'Custom' ? form.customTime : form.targetTime;
         const pickupLabel  = PICKUP_LOCATIONS.find(l => l.id === form.pickupLocation)?.label ?? '';
-        const bouquetLabel = form.bouquetItem ? form.bouquetItem.split(' —')[0] : form.bouquetName;
-        const occasionLabel = OCCASIONS.find(o => o.id === form.occasion)?.label ?? '';
-
-        const rows = [
-          { label: 'Customer',    value: form.customerName },
-          { label: 'Contact',     value: form.customerContact },
-          ...(form.customerSocial ? [{ label: 'Social', value: form.customerSocial }] : []),
-          { label: 'Occasion',    value: occasionLabel },
-          { label: 'Bouquet',     value: bouquetLabel || '—' },
-          { label: 'Date',        value: form.targetDate || '—' },
-          { label: 'Time',        value: displayTime || '—' },
-          { label: 'Fulfillment', value: form.fulfillment === 'pickup' ? `Pickup — ${pickupLabel}` : `Delivery (${form.deliveryBooker === 'customer' ? 'I book rider' : 'You book for me'})` },
-          ...(form.fulfillment === 'delivery' && form.deliveryBooker === 'us' ? [
-            { label: 'Address',  value: form.deliveryAddress },
-            ...(form.deliveryLandmark ? [{ label: 'Landmark', value: form.deliveryLandmark }] : []),
-            { label: 'Receiver', value: `${form.receiverName} · ${form.receiverContact}` },
-          ] : []),
-          ...(form.details        ? [{ label: 'Details',  value: form.details }] : []),
-          ...(form.addOns.length  ? [{ label: 'Add-Ons',  value: form.addOns.join(', ') }] : []),
-          ...(form.preferredBudget ? [{ label: 'Budget',  value: form.preferredBudget }] : []),
-        ];
 
         return (
           <div className="space-y-4">
             <p className="text-xs text-[#2C2C2C]/45 uppercase tracking-widest font-semibold">Review your inquiry</p>
+
+            {/* Reference */}
             <div className="rounded-2xl border border-[#C4717A]/20 bg-[#C4717A]/5 px-5 py-4 flex items-center justify-between">
               <div>
                 <p className="text-xs text-[#C4717A]/60 font-semibold uppercase tracking-widest">Inquiry Reference</p>
-                <p className="text-lg font-bold text-[#C4717A]">{orderNumber}</p>
+                {idLoading
+                  ? <div className="mt-1 h-6 w-36 animate-pulse rounded-lg bg-[#C4717A]/15" />
+                  : <p className="text-lg font-bold text-[#C4717A]">{orderNumber}</p>
+                }
               </div>
               <Flower2 className="h-8 w-8 text-[#C4717A]/30" />
             </div>
+
+            {/* Schedule & Fulfillment */}
+            <div className="rounded-2xl border border-[#C4717A]/10 bg-white divide-y divide-[#C4717A]/8 overflow-hidden">
+              {[
+                { label: 'Customer',    value: form.customerName },
+                { label: 'Contact',     value: form.customerContact },
+                ...(form.customerSocial ? [{ label: 'Social', value: form.customerSocial }] : []),
+                { label: 'Date',        value: form.targetDate || '—' },
+                { label: 'Time',        value: displayTime || '—' },
+                { label: 'Fulfillment', value: form.fulfillment === 'pickup' ? `Pickup — ${pickupLabel}` : `Delivery (${form.deliveryBooker === 'customer' ? 'I book rider' : 'You book for me'})` },
+                ...(form.fulfillment === 'delivery' && form.deliveryBooker === 'us' ? [
+                  { label: 'Address',   value: form.deliveryAddress },
+                  ...(form.deliveryLandmark ? [{ label: 'Landmark', value: form.deliveryLandmark }] : []),
+                  { label: 'Receiver',  value: `${form.receiverName} · ${form.receiverContact}` },
+                ] : []),
+              ].map(({ label, value }) => (
+                <div key={label} className="flex gap-3 px-4 py-3">
+                  <span className="w-24 shrink-0 text-xs font-semibold uppercase tracking-wide text-[#2C2C2C]/40 pt-0.5">{label}</span>
+                  <span className="text-sm text-[#2C2C2C] break-words">{value}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Bouquets summary */}
+            {form.bouquets.map((b, i) => (
+              <div key={i} className="rounded-2xl border border-[#C4717A]/10 bg-white overflow-hidden">
+                <div className="flex items-center gap-2 bg-[#C4717A]/5 px-4 py-2.5 border-b border-[#C4717A]/10">
+                  <Flower2 className="h-3.5 w-3.5 text-[#C4717A]" />
+                  <p className="text-xs font-bold text-[#C4717A] uppercase tracking-widest">
+                    {form.bouquets.length > 1 ? `Bouquet #${i + 1}` : 'Bouquet'}
+                  </p>
+                </div>
+                <div className="divide-y divide-[#C4717A]/8">
+                  {[
+                    { label: 'Type',    value: b.bouquetItem ? b.bouquetItem.split(' —')[0] : (b.bouquetName || '—') },
+                    ...(b.occasion ? [{ label: 'Occasion', value: OCCASIONS.find(o => o.id === b.occasion)?.label ?? b.occasion }] : []),
+                    ...(b.preferredBudget ? [{ label: 'Budget', value: b.preferredBudget }] : []),
+                    ...(b.details ? [{ label: 'Details', value: b.details }] : []),
+                    ...(b.addOns.length ? [{ label: 'Add-Ons', value: b.addOns.join(', ') }] : []),
+                  ].map(({ label, value }) => (
+                    <div key={label} className="flex gap-3 px-4 py-3">
+                      <span className="w-24 shrink-0 text-xs font-semibold uppercase tracking-wide text-[#2C2C2C]/40 pt-0.5">{label}</span>
+                      <span className="text-sm text-[#2C2C2C] break-words">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+
             <div className="rounded-2xl border border-[#6B7C5C]/20 bg-[#6B7C5C]/5 px-4 py-3 text-xs text-[#6B7C5C]">
-              <p className="font-semibold">Payment information</p>
+              <p className="font-semibold">Payment</p>
               <p className="mt-0.5 text-[#6B7C5C]/70">
                 {form.fulfillment === 'pickup'
                   ? 'Cash on pickup or online payment. QR code shared upon approval.'
-                  : 'Downpayment details sent once your order is approved. Delivery fee is separate.'}
+                  : 'Downpayment details sent once your order is approved.'}
               </p>
             </div>
-            {rows.map(({ label, value }) => (
-              <div key={label} className="flex gap-3 rounded-xl border border-[#C4717A]/10 bg-[#FAF6F0] px-4 py-3">
-                <span className="w-24 shrink-0 text-xs font-semibold text-[#2C2C2C]/40 uppercase tracking-wide pt-0.5">{label}</span>
-                <span className="text-sm text-[#2C2C2C] leading-relaxed break-words">{value}</span>
-              </div>
-            ))}
-            {form.pegPreview && (
-              <div>
-                <p className="mb-1.5 text-xs font-semibold uppercase tracking-widest text-[#2C2C2C]/40">Reference Photo</p>
-                <img src={form.pegPreview} alt="Peg" className="h-32 w-full rounded-2xl object-cover border border-[#C4717A]/15" />
+
+            {submitError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                {submitError}
               </div>
             )}
           </div>
@@ -827,92 +911,143 @@ const InquiryForm: React.FC = () => {
     }
   };
 
-  // ── Layout ────────────────────────────────────────────────────────────────
+  // ── Layout ──────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#FAF6F0] py-10 px-4 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-2xl">
+    <div className="min-h-screen bg-[#FAF6F0] py-8 px-4 sm:px-6">
+      <div className="mx-auto max-w-lg">
 
-        <div className="mb-8 text-center">
-          <img src={logo} alt="Beyond the Bloom by A" className="mx-auto mb-4 h-14 w-14 object-contain" />
-          <h1 className="text-2xl font-bold text-[#2C2C2C]">Place Your Order</h1>
-          <p className="mt-1 text-xs text-[#2C2C2C]/45">Step-by-step · Takes less than 3 minutes</p>
+        {/* Header */}
+        <div className="mb-6 text-center">
+          <img src={logo} alt="BTBbyA" className="mx-auto mb-3 h-14 w-14 object-contain" />
+          <h1 className="text-2xl font-bold text-[#2C2C2C]">Place an Inquiry</h1>
+          <p className="mt-1 text-sm text-[#2C2C2C]/50">Beyond the Bloom by A · Sta. Rosa, Laguna</p>
         </div>
 
-        {/* Progress */}
-        <div className="mb-6 overflow-x-auto pb-1">
-          <div className="flex min-w-max items-center px-1">
-            {STEPS.map(({ label, icon: Icon }, i) => (
-              <React.Fragment key={i}>
-                <div className="flex flex-col items-center gap-1">
-                  <button type="button"
-                    onClick={() => i < step && setStep(i)}
-                    disabled={i > step}
-                    className={`flex h-9 w-9 items-center justify-center rounded-full border-2 transition-all ${
-                      i < step  ? 'border-[#C4717A] bg-[#C4717A] text-white cursor-pointer'
-                      : i === step ? 'border-[#C4717A] bg-white text-[#C4717A] shadow-sm'
-                      : 'border-[#C4717A]/20 bg-white text-[#2C2C2C]/25 cursor-default'}`}>
-                    {i < step ? <CheckCircle className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
-                  </button>
-                  <span className={`text-[9px] font-semibold uppercase tracking-wide ${i === step ? 'text-[#C4717A]' : 'text-[#2C2C2C]/30'}`}>
-                    {label}
+        {/* Step indicator */}
+        <div className="mb-6 flex items-center justify-between gap-1">
+          {STEPS.map((s, i) => {
+            const Icon = s.icon;
+            const done    = i < step;
+            const active  = i === step;
+            return (
+              <React.Fragment key={s.label}>
+                <div className="flex flex-col items-center gap-1 min-w-0">
+                  <div className={`flex h-9 w-9 items-center justify-center rounded-full border-2 transition-all ${
+                    active  ? 'border-[#C4717A] bg-[#C4717A] text-white shadow-md shadow-[#C4717A]/30'
+                    : done  ? 'border-[#C4717A] bg-[#C4717A]/10 text-[#C4717A]'
+                            : 'border-[#C4717A]/20 bg-white text-[#2C2C2C]/30'}`}>
+                    {done ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+                  </div>
+                  <span className={`text-[10px] font-semibold hidden sm:block ${active ? 'text-[#C4717A]' : done ? 'text-[#C4717A]/60' : 'text-[#2C2C2C]/30'}`}>
+                    {s.label}
                   </span>
                 </div>
                 {i < STEPS.length - 1 && (
-                  <div className={`h-px w-6 shrink-0 mb-4 transition-all ${i < step ? 'bg-[#C4717A]' : 'bg-[#C4717A]/15'}`} />
+                  <div className={`h-px flex-1 transition-all ${i < step ? 'bg-[#C4717A]/40' : 'bg-[#C4717A]/10'}`} />
                 )}
               </React.Fragment>
-            ))}
-          </div>
+            );
+          })}
         </div>
 
-        {/* Card */}
-        <div className="rounded-3xl border border-[#C4717A]/10 bg-white p-6 shadow-lg sm:p-8">
-          <div className="mb-6 flex items-center gap-3">
-            {(() => { const { icon: Icon } = STEPS[step]; return <Icon className="h-5 w-5 text-[#C4717A]" />; })()}
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-widest text-[#C4717A]/60">Step {step + 1} of {STEPS.length}</p>
-              <h2 className="text-lg font-bold text-[#2C2C2C]">{STEPS[step].label}</h2>
-            </div>
-          </div>
+        {/* Draft saved indicator */}
+        <div className={`mb-3 flex items-center justify-between text-xs text-[#2C2C2C]/35 transition-opacity ${draftSaved ? 'opacity-100' : 'opacity-0'}`}>
+          <span className="flex items-center gap-1"><Save className="h-3 w-3" /> Draft saved</span>
+          <button type="button" onClick={clearDraft} className="flex items-center gap-1 text-red-300 hover:text-red-400 transition">
+            <Trash2 className="h-3 w-3" /> Clear
+          </button>
+        </div>
 
+        {/* Step content */}
+        <div className="rounded-3xl border border-[#C4717A]/10 bg-white p-5 shadow-lg sm:p-6">
           {renderStep()}
-
-          <div className="mt-8 flex items-center justify-between gap-3">
-            {step > 0 ? (
-              <button type="button" onClick={() => setStep(s => s - 1)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[#C4717A]/20 px-5 py-2.5 text-sm font-semibold text-[#C4717A] transition hover:bg-[#C4717A]/5 active:scale-95">
-                <ChevronLeft className="h-4 w-4" /> Back
-              </button>
-            ) : (
-              <button type="button" onClick={clearDraft}
-                className="inline-flex items-center gap-1.5 rounded-full border border-red-200 px-5 py-2.5 text-xs font-semibold text-red-400 transition hover:bg-red-50 active:scale-95">
-                <Trash2 className="h-3.5 w-3.5" /> Clear
-              </button>
-            )}
-
-            {step < STEPS.length - 1 ? (
-              <button type="button" disabled={!canNext()} onClick={() => setStep(s => s + 1)}
-                className="inline-flex items-center gap-1.5 rounded-full bg-[#C4717A] px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#C4717A]/25 transition hover:bg-[#b36370] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
-                Continue <ChevronRight className="h-4 w-4" />
-              </button>
-            ) : (
-              <button type="button"
-                onClick={() => { localStorage.removeItem(DRAFT_KEY); setSubmitted(true); }}
-                className="inline-flex items-center gap-2 rounded-full bg-[#C4717A] px-7 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#C4717A]/25 transition hover:bg-[#b36370] active:scale-95">
-                <Flower2 className="h-4 w-4" /> Submit Inquiry
-              </button>
-            )}
-          </div>
         </div>
 
-        <div className={`mt-4 flex items-center justify-center gap-1.5 text-xs text-[#6B7C5C] transition-opacity duration-500 ${draftSaved ? 'opacity-100' : 'opacity-0'}`}>
-          <Save className="h-3 w-3" /> Draft saved automatically
+        {/* Navigation */}
+        <div className="mt-6 flex items-center justify-between gap-3">
+          {step > 0 ? (
+            <button type="button" onClick={() => setStep(s => s - 1)}
+              className="inline-flex items-center gap-2 rounded-full border border-[#C4717A]/20 px-5 py-2.5 text-sm font-semibold text-[#C4717A] transition hover:bg-[#C4717A]/5 active:scale-95">
+              <ChevronLeft className="h-4 w-4" /> Back
+            </button>
+          ) : (
+            <div />
+          )}
+
+          {step < STEPS.length - 1 ? (
+            <button type="button" onClick={() => canNext() && setStep(s => s + 1)}
+              disabled={!canNext()}
+              className="inline-flex items-center gap-2 rounded-full bg-[#C4717A] px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#C4717A]/25 transition hover:bg-[#b36370] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+              Next <ChevronRight className="h-4 w-4" />
+            </button>
+          ) : (
+            <button type="button"
+              disabled={submitting || idLoading}
+              onClick={async () => {
+                setSubmitting(true);
+                setSubmitError('');
+                try {
+                  // Replace the payload block inside the submit onClick:
+const payload = {
+  id:              orderNumber,
+  occasion:        form.bouquets[0].occasion || null,
+  bouquetType:     form.bouquets[0].bouquetType,
+  bouquetName:     form.bouquets.map((b, i) =>
+    form.bouquets.length > 1
+      ? `#${i + 1}: ${b.bouquetItem ? b.bouquetItem.split(' —')[0] : b.bouquetName}`
+      : (b.bouquetItem ? b.bouquetItem.split(' —')[0] : b.bouquetName)
+  ).join(' | '),
+  targetDate:      form.targetDate,
+  targetTime:      form.targetTime === 'Custom' ? form.customTime : form.targetTime,
+  fulfillment:     form.fulfillment,
+  pickupLocation:  form.pickupLocation,
+  deliveryAddress: form.deliveryAddress,
+  deliveryLandmark:form.deliveryLandmark,
+  deliveryBooker:  form.deliveryBooker,
+  receiverName:    form.receiverName,
+  receiverContact: form.receiverContact,
+  customerName:    form.customerName,
+  customerContact: form.customerContact,
+  customerSocial:  form.customerSocial,
+  details: form.bouquets.map((b, i) =>
+    form.bouquets.length > 1
+      ? `[Bouquet #${i + 1} — ${b.bouquetItem ? b.bouquetItem.split(' —')[0] : b.bouquetName}]${b.occasion ? ` (${OCCASIONS.find(o => o.id === b.occasion)?.label})` : ''}: ${b.details || '—'}`
+      : b.details
+  ).filter(Boolean).join('\n'),
+  addOns:          [...new Set(form.bouquets.flatMap(b => b.addOns))],
+  preferredBudget: form.bouquets.map(b => b.preferredBudget).filter(Boolean).join(', '),
+};
+
+                  const res = await fetch('/api/inquiries', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify(payload),
+                  });
+
+                  if (!res.ok) {
+                    const err = await res.json();
+                    setSubmitError(err.error ?? 'Failed to submit. Please try again.');
+                    return;
+                  }
+
+                  localStorage.removeItem(DRAFT_KEY);
+                  setSubmitted(true);
+                } catch {
+                  setSubmitError('Network error. Please check your connection and try again.');
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
+              className="inline-flex items-center gap-2 rounded-full bg-[#C4717A] px-7 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#C4717A]/25 transition hover:bg-[#b36370] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {submitting
+                ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />Submitting…</>
+                : <><Flower2 className="h-4 w-4" />Submit Inquiry</>
+              }
+            </button>
+          )}
         </div>
 
-        <p className="mt-4 text-center text-xs text-[#2C2C2C]/35">
-          Already submitted?{' '}
-          <Link to="/track" className="text-[#C4717A] hover:underline font-semibold">Track your inquiry</Link>
-        </p>
       </div>
     </div>
   );

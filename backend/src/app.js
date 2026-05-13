@@ -22,10 +22,10 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', brand: 'Beyond the Bloom by A', ts: new Date().toISOString() });
 });
 
-app.use('/api/auth', require('./routes/auth.routes'));
+app.use('/api/auth',         require('./routes/auth.routes'));
+app.use('/api/inquiries',    require('./routes/inquiry.routes'));
 
 // ── Uncomment as each module is built ──
-// app.use('/api/inquiries',    require('./routes/inquiry.routes'));
 // app.use('/api/products',     require('./routes/product.routes'));
 // app.use('/api/customers',    require('./routes/customer.routes'));
 // app.use('/api/transactions', require('./routes/transaction.routes'));

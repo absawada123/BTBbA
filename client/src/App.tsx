@@ -72,7 +72,7 @@ const App: React.FC = () => {
         </Route>
 
         {/* ── Catch-all ── */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
 
       </Routes>
     </AuthProvider>
