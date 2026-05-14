@@ -1,36 +1,37 @@
-// backend/src/app.js
-
-const express        = require('express');
-const cors           = require('cors');
-const cookieParser   = require('cookie-parser');
+const express = require('express');
+const cors = require('cors');
+const cookieParser = require('cookie-parser');
+const path = require('path');
 const { initSchema } = require('./database/schema');
 require('dotenv').config();
 
 const app = express();
 
 app.use(cors({
-  origin:      process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true,
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-initSchema();
+if (process.env.NODE_ENV !== 'production') {
+  initSchema();
+}
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', brand: 'Beyond the Bloom by A', ts: new Date().toISOString() });
 });
 
-app.use('/api/auth',         require('./routes/auth.routes'));
-app.use('/api/inquiries',    require('./routes/inquiry.routes'));
+app.use('/api/auth', require('./routes/auth.routes'));
+app.use('/api/inquiries', require('./routes/inquiry.routes'));
 
-// ── Uncomment as each module is built ──
-// app.use('/api/products',     require('./routes/product.routes'));
-// app.use('/api/customers',    require('./routes/customer.routes'));
-// app.use('/api/transactions', require('./routes/transaction.routes'));
-// app.use('/api/expenses',     require('./routes/expense.routes'));
-// app.use('/api/reports',      require('./routes/report.routes'));
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../../client/dist')));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../../client/dist', 'index.html'));
+  });
+}
 
 app.use((_req, res) => res.status(404).json({ message: 'Route not found' }));
 app.use((err, _req, res, _next) => {
