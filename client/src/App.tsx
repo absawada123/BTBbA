@@ -16,7 +16,7 @@ import Landing      from './components/pages/Landing';
 import Home         from './components/pages/public/Home';
 import About        from './components/pages/public/About';
 import Projects     from './components/pages/public/Projects';
-import InquiryForm  from './components/pages/public/InquiryForm';
+import InquiryForm  from './components/pages/public//inquiry/InquiryForm';
 import TrackInquiry from './components/pages/public/TrackInquiry';
 
 // Dashboard pages  (create these files as we build each module)
